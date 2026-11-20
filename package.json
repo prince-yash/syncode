@@ -1,0 +1,40 @@
+{
+  "name": "syncode",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "workspaces": [
+    "frontend",
+    "backend",
+    "packages/database"
+  ],
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names frontend,backend \"npm run dev --workspace=@syncode/frontend\" \"npm run dev:backend\"",
+    "dev:backend": "npm run build --workspace=@syncode/database && npm run dev --workspace=@syncode/backend",
+    "build": "npm run build --workspace=@syncode/database && npm run build --workspace=@syncode/backend && npm run build --workspace=@syncode/frontend",
+    "typecheck": "npm run db:generate && npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspace=@syncode/backend",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "npm run generate --workspace=@syncode/database",
+    "db:migrate": "npm run migrate:dev --workspace=@syncode/database",
+    "db:deploy": "npm run migrate:deploy --workspace=@syncode/database",
+    "db:status": "npm run migrate:status --workspace=@syncode/database",
+    "db:check": "npm run check --workspace=@syncode/database"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.1",
+    "concurrently": "9.2.1",
+    "eslint": "9.39.1",
+    "eslint-plugin-react-hooks": "7.0.1",
+    "eslint-plugin-react-refresh": "0.4.24",
+    "globals": "16.5.0",
+    "prettier": "3.6.2",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.48.1"
+  }
+}

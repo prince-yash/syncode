@@ -1,0 +1,575 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum ThemePreference {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+enum MembershipRole {
+  OWNER
+  EDITOR
+  MEMBER
+  VIEWER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  LEFT
+  REMOVED
+}
+
+enum RoomVisibility {
+  PRIVATE
+  LINK
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum DocumentSnapshotKind {
+  CHECKPOINT
+  RESTORE
+}
+
+enum RoomActivityType {
+  ROOM_CREATED
+  ROOM_ARCHIVED
+  MEMBER_JOINED
+  MEMBER_LEFT
+  MEMBER_REMOVED
+  MEMBER_ROLE_CHANGED
+  INVITATION_CREATED
+  JOIN_CODE_ROTATED
+  DOCUMENT_SNAPSHOT_CREATED
+  CHALLENGE_CREATED
+  SUBMISSION_CREATED
+  PREDICTION_ROUND_SCORED
+}
+
+enum ExecutionStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  TIMED_OUT
+  CANCELLED
+}
+
+enum TestOutcome {
+  PASS
+  FAIL
+  ERROR
+  SKIPPED
+}
+
+enum PredictionRoundStatus {
+  OPEN
+  LOCKED
+  SCORED
+  VOID
+}
+
+enum PredictionOutcome {
+  PASS
+  FAIL
+}
+
+model User {
+  id                       String                  @id @default(uuid()) @db.Uuid
+  email                    String?                 @unique @db.VarChar(320)
+  username                 String?                 @unique @db.VarChar(32)
+  displayName              String                  @db.VarChar(80)
+  avatarUrl                String?                 @db.VarChar(2048)
+  bio                      String?                 @db.VarChar(500)
+  status                   UserStatus              @default(ACTIVE)
+  deletedAt                DateTime?               @db.Timestamptz(6)
+  createdAt                DateTime                @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime                @updatedAt @db.Timestamptz(6)
+  credential               PasswordCredential?
+  sessions                 UserSession[]
+  passwordResetTokens      PasswordResetToken[]
+  preferences              UserPreference?
+  createdRooms             Room[]                  @relation("RoomCreator")
+  memberships              RoomMembership[]        @relation("MembershipUser")
+  sentInvitations          RoomInvitation[]        @relation("InvitationSender")
+  receivedInvitations      RoomInvitation[]        @relation("InvitationRecipient")
+  createdJoinCodes         RoomJoinCode[]          @relation("JoinCodeCreator")
+  documentSnapshots        RoomDocumentSnapshot[]  @relation("SnapshotCreator")
+  documentUpdates          RoomDocumentUpdate[]    @relation("UpdateActor")
+  roomActivities           RoomActivity[]          @relation("ActivityActor")
+  targetedRoomActivities   RoomActivity[]          @relation("ActivityTarget")
+  roomMessages             RoomMessage[]           @relation("MessageAuthor")
+  createdChallenges        Challenge[]             @relation("ChallengeCreator")
+  createdChallengeVersions ChallengeVersion[]      @relation("ChallengeVersionCreator")
+  submissions              CodeSubmission[]        @relation("SubmissionAuthor")
+  eligiblePredictions      PredictionParticipant[] @relation("ParticipantUser")
+  predictions              Prediction[]            @relation("PredictionUser")
+  scoreAwards              ScoreAward[]            @relation("AwardRecipient")
+}
+
+model PasswordCredential {
+  userId            String   @id @db.Uuid
+  passwordHash      String   @db.VarChar(255)
+  passwordUpdatedAt DateTime @default(now()) @db.Timestamptz(6)
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(6)
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  tokenHash  String    @unique @db.Char(64)
+  expiresAt  DateTime  @db.Timestamptz(6)
+  revokedAt  DateTime? @db.Timestamptz(6)
+  lastSeenAt DateTime? @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  tokenHash  String    @unique @db.Char(64)
+  expiresAt  DateTime  @db.Timestamptz(6)
+  consumedAt DateTime? @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model UserPreference {
+  userId                 String          @id @db.Uuid
+  theme                  ThemePreference @default(SYSTEM)
+  editorFontSize         Int             @default(14)
+  editorTabSize          Int             @default(2)
+  editorLineNumbers      Boolean         @default(true)
+  notifyRoomInvitations  Boolean         @default(true)
+  notifyChallengeUpdates Boolean         @default(true)
+  notifyProductUpdates   Boolean         @default(false)
+  createdAt              DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime        @updatedAt @db.Timestamptz(6)
+  user                   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Room {
+  id               String            @id @default(uuid()) @db.Uuid
+  name             String            @db.VarChar(80)
+  description      String?           @db.VarChar(500)
+  visibility       RoomVisibility    @default(PRIVATE)
+  createdById      String            @db.Uuid
+  createdAt        DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @db.Timestamptz(6)
+  archivedAt       DateTime?         @db.Timestamptz(6)
+  createdBy        User              @relation("RoomCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  memberships      RoomMembership[]
+  invitations      RoomInvitation[]
+  joinCodes        RoomJoinCode[]
+  documents        RoomDocument[]
+  activities       RoomActivity[]
+  messages         RoomMessage[]
+  challenges       Challenge[]
+  submissions      CodeSubmission[]
+  predictionRounds PredictionRound[]
+
+  @@index([archivedAt, createdAt])
+  @@index([createdById, createdAt])
+  @@index([visibility, archivedAt])
+}
+
+model RoomMembership {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  roomId                 String                  @db.Uuid
+  userId                 String                  @db.Uuid
+  role                   MembershipRole          @default(MEMBER)
+  status                 MembershipStatus        @default(ACTIVE)
+  invitationId           String?                 @db.Uuid
+  joinCodeId             String?                 @db.Uuid
+  joinedAt               DateTime                @default(now()) @db.Timestamptz(6)
+  endedAt                DateTime?               @db.Timestamptz(6)
+  room                   Room                    @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  user                   User                    @relation("MembershipUser", fields: [userId], references: [id], onDelete: Restrict)
+  invitation             RoomInvitation?         @relation("MembershipInvitation", fields: [invitationId, roomId], references: [id, roomId], onDelete: Restrict)
+  joinCode               RoomJoinCode?           @relation(fields: [joinCodeId, roomId], references: [id, roomId], onDelete: Restrict)
+  predictionParticipants PredictionParticipant[] @relation("ParticipantMembership")
+
+  @@unique([id, userId, roomId])
+  @@unique([invitationId, roomId])
+  @@index([roomId, status, joinedAt])
+  @@index([userId, status, joinedAt])
+  @@index([invitationId, roomId, userId])
+  @@index([joinCodeId, roomId])
+}
+
+model RoomInvitation {
+  id            String           @id @default(uuid()) @db.Uuid
+  roomId        String           @db.Uuid
+  invitedById   String           @db.Uuid
+  invitedUserId String?          @db.Uuid
+  invitedEmail  String?          @db.VarChar(320)
+  tokenHash     String?          @unique @db.Char(64)
+  status        InvitationStatus @default(PENDING)
+  expiresAt     DateTime         @db.Timestamptz(6)
+  acceptedAt    DateTime?        @db.Timestamptz(6)
+  revokedAt     DateTime?        @db.Timestamptz(6)
+  createdAt     DateTime         @default(now()) @db.Timestamptz(6)
+  room          Room             @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  invitedBy     User             @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: Restrict)
+  invitedUser   User?            @relation("InvitationRecipient", fields: [invitedUserId], references: [id], onDelete: Restrict)
+  membership    RoomMembership?  @relation("MembershipInvitation")
+
+  @@unique([id, roomId])
+  @@index([roomId, status, expiresAt])
+  @@index([invitedUserId, status])
+  @@index([invitedEmail, status])
+  @@index([invitedById])
+}
+
+model RoomJoinCode {
+  id          String           @id @default(uuid()) @db.Uuid
+  roomId      String           @db.Uuid
+  createdById String           @db.Uuid
+  tokenHash   String           @unique @db.Char(64)
+  expiresAt   DateTime?        @db.Timestamptz(6)
+  revokedAt   DateTime?        @db.Timestamptz(6)
+  createdAt   DateTime         @default(now()) @db.Timestamptz(6)
+  room        Room             @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  createdBy   User             @relation("JoinCodeCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  memberships RoomMembership[]
+
+  @@unique([id, roomId])
+  @@index([roomId, revokedAt, expiresAt])
+  @@index([createdById])
+}
+
+model RoomDocument {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  roomId             String                 @db.Uuid
+  documentKey        String                 @db.VarChar(80)
+  title              String                 @db.VarChar(120)
+  languageId         String?                @db.Uuid
+  lastUpdateSequence Int                    @default(0)
+  createdAt          DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime               @updatedAt @db.Timestamptz(6)
+  room               Room                   @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  language           ProgrammingLanguage?   @relation(fields: [languageId], references: [id], onDelete: Restrict)
+  snapshots          RoomDocumentSnapshot[]
+  updates            RoomDocumentUpdate[]
+  submissions        CodeSubmission[]
+
+  @@unique([roomId, documentKey])
+  @@unique([id, roomId])
+  @@index([roomId, updatedAt])
+  @@index([languageId])
+}
+
+model RoomDocumentSnapshot {
+  id               String               @id @default(uuid()) @db.Uuid
+  documentId       String               @db.Uuid
+  snapshotSequence Int
+  updateSequence   Int
+  kind             DocumentSnapshotKind @default(CHECKPOINT)
+  snapshotData     Bytes                @db.ByteA
+  stateVector      Bytes?               @db.ByteA
+  checksum         String               @db.Char(64)
+  createdByUserId  String?              @db.Uuid
+  createdAt        DateTime             @default(now()) @db.Timestamptz(6)
+  document         RoomDocument         @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  createdBy        User?                @relation("SnapshotCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([documentId, snapshotSequence])
+  @@index([documentId, updateSequence])
+}
+
+model RoomDocumentUpdate {
+  id              String       @id @default(uuid()) @db.Uuid
+  documentId      String       @db.Uuid
+  sequence        Int
+  updateData      Bytes        @db.ByteA
+  checksum        String       @db.Char(64)
+  createdByUserId String?      @db.Uuid
+  createdAt       DateTime     @default(now()) @db.Timestamptz(6)
+  document        RoomDocument @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  createdBy       User?        @relation("UpdateActor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([documentId, sequence])
+  @@index([documentId, createdAt])
+}
+
+model RoomActivity {
+  id           String           @id @default(uuid()) @db.Uuid
+  roomId       String           @db.Uuid
+  actorUserId  String?          @db.Uuid
+  targetUserId String?          @db.Uuid
+  type         RoomActivityType
+  details      Json?
+  createdAt    DateTime         @default(now()) @db.Timestamptz(6)
+  room         Room             @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  actor        User?            @relation("ActivityActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  targetUser   User?            @relation("ActivityTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([roomId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([targetUserId, createdAt])
+}
+
+model RoomMessage {
+  id           String    @id @default(uuid()) @db.Uuid
+  roomId       String    @db.Uuid
+  authorUserId String?   @db.Uuid
+  body         String?   @db.Text
+  editedAt     DateTime? @db.Timestamptz(6)
+  deletedAt    DateTime? @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(6)
+  room         Room      @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  author       User?     @relation("MessageAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  @@index([roomId, createdAt])
+  @@index([authorUserId, createdAt])
+}
+
+model ProgrammingLanguage {
+  id                String           @id @default(uuid()) @db.Uuid
+  key               String           @unique @db.VarChar(40)
+  displayName       String           @db.VarChar(80)
+  runtimeIdentifier String?          @db.VarChar(100)
+  isEnabled         Boolean          @default(true)
+  createdAt         DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime         @updatedAt @db.Timestamptz(6)
+  documents         RoomDocument[]
+  submissions       CodeSubmission[]
+}
+
+model Challenge {
+  id                        String             @id @default(uuid()) @db.Uuid
+  roomId                    String             @db.Uuid
+  createdById               String             @db.Uuid
+  currentPublishedVersionId String?            @db.Uuid
+  title                     String             @db.VarChar(160)
+  archivedAt                DateTime?          @db.Timestamptz(6)
+  createdAt                 DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt                 DateTime           @updatedAt @db.Timestamptz(6)
+  room                      Room               @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  createdBy                 User               @relation("ChallengeCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  versions                  ChallengeVersion[] @relation("ChallengeVersions")
+  currentPublishedVersion   ChallengeVersion?  @relation("CurrentPublishedVersion", fields: [id, currentPublishedVersionId], references: [challengeId, id], onDelete: Restrict)
+
+  @@unique([id, currentPublishedVersionId])
+  @@unique([id, roomId])
+  @@index([roomId, archivedAt, createdAt])
+  @@index([createdById])
+}
+
+model ChallengeVersion {
+  id          String           @id @default(uuid()) @db.Uuid
+  challengeId String           @db.Uuid
+  roomId      String           @db.Uuid
+  version     Int
+  statement   String           @db.Text
+  starterCode String?          @db.Text
+  createdById String           @db.Uuid
+  publishedAt DateTime?        @db.Timestamptz(6)
+  createdAt   DateTime         @default(now()) @db.Timestamptz(6)
+  challenge   Challenge        @relation("ChallengeVersions", fields: [challengeId, roomId], references: [id, roomId], onDelete: Restrict)
+  currentFor  Challenge?       @relation("CurrentPublishedVersion")
+  createdBy   User             @relation("ChallengeVersionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  testCases   TestCase[]
+  submissions CodeSubmission[]
+
+  @@unique([challengeId, version])
+  @@unique([challengeId, id])
+  @@unique([id, roomId])
+  @@index([challengeId, createdAt])
+  @@index([createdById])
+}
+
+model TestCase {
+  id                 String                @id @default(uuid()) @db.Uuid
+  challengeVersionId String                @db.Uuid
+  position           Int
+  input              String                @db.Text
+  expectedOutput     String                @db.Text
+  isHidden           Boolean               @default(false)
+  createdAt          DateTime              @default(now()) @db.Timestamptz(6)
+  challengeVersion   ChallengeVersion      @relation(fields: [challengeVersionId], references: [id], onDelete: Restrict)
+  executionResults   ExecutionTestResult[]
+  predictions        Prediction[]
+
+  @@unique([challengeVersionId, position])
+  @@unique([id, challengeVersionId])
+}
+
+model CodeSubmission {
+  id                 String              @id @default(uuid()) @db.Uuid
+  roomId             String              @db.Uuid
+  authorUserId       String              @db.Uuid
+  challengeVersionId String              @db.Uuid
+  documentId         String?             @db.Uuid
+  languageId         String              @db.Uuid
+  sourceCode         String              @db.Text
+  sourceHash         String              @db.Char(64)
+  createdAt          DateTime            @default(now()) @db.Timestamptz(6)
+  room               Room                @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  author             User                @relation("SubmissionAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+  challengeVersion   ChallengeVersion    @relation(fields: [challengeVersionId, roomId], references: [id, roomId], onDelete: Restrict)
+  document           RoomDocument?       @relation(fields: [documentId, roomId], references: [id, roomId], onDelete: Restrict)
+  language           ProgrammingLanguage @relation(fields: [languageId], references: [id], onDelete: Restrict)
+  executionAttempts  ExecutionAttempt[]
+  predictionRound    PredictionRound?
+
+  @@unique([id, challengeVersionId])
+  @@unique([id, roomId, challengeVersionId])
+  @@index([roomId, createdAt])
+  @@index([authorUserId, createdAt])
+  @@index([challengeVersionId, createdAt])
+  @@index([documentId])
+  @@index([languageId])
+}
+
+model ExecutionAttempt {
+  id                 String                @id @default(uuid()) @db.Uuid
+  submissionId       String                @db.Uuid
+  challengeVersionId String                @db.Uuid
+  attemptNumber      Int
+  providerJobId      String?               @unique @db.VarChar(128)
+  status             ExecutionStatus       @default(QUEUED)
+  stdout             String?               @db.Text
+  stderr             String?               @db.Text
+  compileOutput      String?               @db.Text
+  exitCode           Int?
+  runTimeMs          Int?
+  memoryKb           Int?
+  createdAt          DateTime              @default(now()) @db.Timestamptz(6)
+  startedAt          DateTime?             @db.Timestamptz(6)
+  finishedAt         DateTime?             @db.Timestamptz(6)
+  submission         CodeSubmission        @relation(fields: [submissionId, challengeVersionId], references: [id, challengeVersionId], onDelete: Restrict)
+  testResults        ExecutionTestResult[]
+  scoreAwards        ScoreAward[]
+
+  @@unique([submissionId, attemptNumber])
+  @@unique([id, submissionId])
+  @@unique([id, challengeVersionId])
+  @@index([status, createdAt])
+}
+
+model ExecutionTestResult {
+  id                 String           @id @default(uuid()) @db.Uuid
+  executionAttemptId String           @db.Uuid
+  testCaseId         String           @db.Uuid
+  challengeVersionId String           @db.Uuid
+  outcome            TestOutcome
+  actualOutput       String?          @db.Text
+  errorMessage       String?          @db.Text
+  createdAt          DateTime         @default(now()) @db.Timestamptz(6)
+  executionAttempt   ExecutionAttempt @relation(fields: [executionAttemptId, challengeVersionId], references: [id, challengeVersionId], onDelete: Restrict)
+  testCase           TestCase         @relation(fields: [testCaseId, challengeVersionId], references: [id, challengeVersionId], onDelete: Restrict)
+
+  @@unique([executionAttemptId, testCaseId])
+  @@index([testCaseId])
+}
+
+model PredictionRound {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  submissionId       String                  @unique @db.Uuid
+  roomId             String                  @db.Uuid
+  challengeVersionId String                  @db.Uuid
+  status             PredictionRoundStatus   @default(OPEN)
+  openedAt           DateTime                @default(now()) @db.Timestamptz(6)
+  lockedAt           DateTime?               @db.Timestamptz(6)
+  scoredAt           DateTime?               @db.Timestamptz(6)
+  voidedAt           DateTime?               @db.Timestamptz(6)
+  submission         CodeSubmission          @relation(fields: [submissionId, roomId, challengeVersionId], references: [id, roomId, challengeVersionId], onDelete: Restrict)
+  room               Room                    @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  participants       PredictionParticipant[]
+  predictions        Prediction[]
+  scoreAwards        ScoreAward[]
+
+  @@unique([id, submissionId])
+  @@unique([id, roomId])
+  @@unique([id, challengeVersionId])
+  @@unique([submissionId, roomId, challengeVersionId])
+  @@index([roomId, status, openedAt])
+}
+
+model PredictionParticipant {
+  id                String          @id @default(uuid()) @db.Uuid
+  predictionRoundId String          @db.Uuid
+  userId            String          @db.Uuid
+  roomId            String          @db.Uuid
+  roomMembershipId  String          @db.Uuid
+  submittedAt       DateTime?       @db.Timestamptz(6)
+  createdAt         DateTime        @default(now()) @db.Timestamptz(6)
+  predictionRound   PredictionRound @relation(fields: [predictionRoundId, roomId], references: [id, roomId], onDelete: Restrict)
+  user              User            @relation("ParticipantUser", fields: [userId], references: [id], onDelete: Restrict)
+  roomMembership    RoomMembership  @relation("ParticipantMembership", fields: [roomMembershipId, userId, roomId], references: [id, userId, roomId], onDelete: Restrict)
+  predictions       Prediction[]
+  scoreAwards       ScoreAward[]
+
+  @@unique([predictionRoundId, userId])
+  @@unique([id, predictionRoundId, userId])
+  @@index([userId, createdAt])
+}
+
+model Prediction {
+  id                 String                @id @default(uuid()) @db.Uuid
+  predictionRoundId  String                @db.Uuid
+  participantId      String                @db.Uuid
+  userId             String                @db.Uuid
+  testCaseId         String                @db.Uuid
+  challengeVersionId String                @db.Uuid
+  predictedOutcome   PredictionOutcome
+  createdAt          DateTime              @default(now()) @db.Timestamptz(6)
+  predictionRound    PredictionRound       @relation(fields: [predictionRoundId, challengeVersionId], references: [id, challengeVersionId], onDelete: Restrict)
+  participant        PredictionParticipant @relation(fields: [participantId, predictionRoundId, userId], references: [id, predictionRoundId, userId], onDelete: Restrict)
+  user               User                  @relation("PredictionUser", fields: [userId], references: [id], onDelete: Restrict)
+  testCase           TestCase              @relation(fields: [testCaseId, challengeVersionId], references: [id, challengeVersionId], onDelete: Restrict)
+
+  @@unique([predictionRoundId, userId, testCaseId])
+  @@index([participantId])
+  @@index([testCaseId])
+  @@index([userId])
+}
+
+model ScoreAward {
+  id                       String                @id @default(uuid()) @db.Uuid
+  predictionRoundId        String                @db.Uuid
+  participantId            String                @db.Uuid
+  userId                   String                @db.Uuid
+  submissionId             String                @db.Uuid
+  executionAttemptId       String                @db.Uuid
+  points                   Int
+  correctPredictionCount   Int
+  evaluatedPredictionCount Int
+  scoringRuleVersion       String                @db.VarChar(40)
+  createdAt                DateTime              @default(now()) @db.Timestamptz(6)
+  predictionRound          PredictionRound       @relation(fields: [predictionRoundId, submissionId], references: [id, submissionId], onDelete: Restrict)
+  participant              PredictionParticipant @relation(fields: [participantId, predictionRoundId, userId], references: [id, predictionRoundId, userId], onDelete: Restrict)
+  user                     User                  @relation("AwardRecipient", fields: [userId], references: [id], onDelete: Restrict)
+  executionAttempt         ExecutionAttempt      @relation(fields: [executionAttemptId, submissionId], references: [id, submissionId], onDelete: Restrict)
+
+  @@unique([predictionRoundId, userId])
+  @@index([userId, createdAt])
+  @@index([predictionRoundId, userId])
+}
